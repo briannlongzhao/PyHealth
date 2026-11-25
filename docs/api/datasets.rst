@@ -410,6 +410,11 @@ PyHealth does not ship any data: you download each dataset from its source and p
      - `Kaggle <https://www.kaggle.com/datasets/tawsifurrahman/covid19-radiography-database>`__
      - No
      - —
+   * - :doc:`PMData <datasets/pyhealth.datasets.PMDataDataset>`
+     - Open (CC BY-NC 4.0)
+     - `Simula <https://datasets.simula.no/pmdata/>`__
+     - No
+     - —
    * - :doc:`ISIC 2019 <datasets/pyhealth.datasets.ISIC2019Dataset>`
      - Open (CC BY-NC 4.0)
      - `ISIC <https://challenge.isic-archive.com/data/#2019>`__
@@ -641,6 +646,7 @@ Available Datasets
     datasets/pyhealth.datasets.OMOPDataset
     datasets/pyhealth.datasets.SyntheaCSVDataset
     datasets/pyhealth.datasets.DREAMTDataset
+    datasets/pyhealth.datasets.PMDataDataset
     datasets/pyhealth.datasets.SHHSDataset
     datasets/pyhealth.datasets.SleepEDFDataset
     datasets/pyhealth.datasets.NSRRSleepDataset

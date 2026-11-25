@@ -73,6 +73,7 @@ from .ptbxl import PTBXLDataset as PTBXLDataset
 from .covid_blues import COVIDBLUESDataset as COVIDBLUESDataset
 from .chapman_shaoxing import ChapmanShaoxingDataset as ChapmanShaoxingDataset
 from .physionet2012 import PhysioNet2012Dataset as PhysioNet2012Dataset
+from .pmdata import PMDataDataset as PMDataDataset
 from .dreamt import DREAMTDataset
 from .ehrshot import EHRShotDataset
 from .eicu import eICUDataset

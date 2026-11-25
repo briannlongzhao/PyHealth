@@ -254,6 +254,7 @@ Available Tasks
     Patient Linkage (MIMIC-III, legacy) <tasks/pyhealth.tasks.patient_linkage_mimic3_fn>
     Patient Linkage (MIMIC-III) <tasks/pyhealth.tasks.patient_linkage_mimic3>
     Readmission Prediction <tasks/pyhealth.tasks.readmission_prediction>
+    Stress Detection (PMData) <tasks/pyhealth.tasks.PMDataStressDetection>
     Sleep Staging <tasks/pyhealth.tasks.sleep_staging>
     Sleep Staging (SleepEDF) <tasks/pyhealth.tasks.SleepStagingSleepEDF>
     Sleep Staging (Cardio-Respiratory, NSRR) <tasks/pyhealth.tasks.SleepStagingCardioRespiratory>

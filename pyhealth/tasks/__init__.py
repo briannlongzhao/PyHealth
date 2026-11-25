@@ -185,6 +185,7 @@ from .generate_ehr import (
 from .pad_ufes_20_classification import (
     PADUFES20Classification as PADUFES20Classification,
 )
+from .pmdata_stress_detection import PMDataStressDetection as PMDataStressDetection
 from .patient_linkage import patient_linkage_mimic3_fn
 from .jichi_davis_grading import JichiDavisGrading as JichiDavisGrading
 from .rsna_pneumonia_classification import (
