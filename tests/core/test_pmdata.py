@@ -32,7 +32,11 @@ from pyhealth.data import Patient
 from pyhealth.datasets import PMDataDataset
 from pyhealth.datasets.pmdata import PMDATA_TABLES
 from pyhealth.tasks import PMDataStressDetection
-from pyhealth.tasks.pmdata_stress_detection import FEATURE_GROUPS
+from pyhealth.tasks.pmdata_stress_detection import (
+    FEATURE_GROUPS,
+    channel_statistics,
+    describe_day,
+)
 
 DAY = "2019-11-01"
 
@@ -363,6 +367,14 @@ class TestPMDataDataset(unittest.TestCase):
         self.assertEqual(tuple(sample["survey"].shape), (n_features,))
         self.assertFalse(bool(sample["wearable"].isnan().any()))
 
+    def test_set_task_with_text(self) -> None:
+        samples = self.dataset.set_task(
+            PMDataStressDetection(min_hours=0, include_text=True), num_workers=1
+        )
+        texts = [s["text"] for s in samples]
+        self.assertTrue(all(isinstance(t, str) for t in texts))
+        self.assertTrue(any(t.startswith("steps: mean is") for t in texts))
+
     def test_unknown_table(self) -> None:
         with self.assertRaises(ValueError):
             PMDataDataset(root=str(self.root), tables=["heart"])
@@ -566,6 +578,61 @@ class TestPMDataStressDetection(unittest.TestCase):
         samples = PMDataStressDetection()(_patient(events))
         self.assertEqual(len(samples), 1)
         self.assertEqual(samples[0]["stress_score"], 5)
+
+    def test_no_text_by_default(self) -> None:
+        task = PMDataStressDetection()
+        self.assertNotIn("text", task.input_schema)
+        self.assertNotIn("text", task(_patient(_day()))[0])
+
+    def test_text_description(self) -> None:
+        task = PMDataStressDetection(include_text=True)
+        self.assertEqual(task.input_schema["text"], "raw")
+        self.assertNotIn("text", PMDataStressDetection.input_schema)  # class intact
+        lines = task(_patient(_day(stress=5)))[0]["text"].splitlines()
+        keys = [line.split(":")[0] for line in lines]
+        self.assertEqual(keys[:3], ["steps", "heart rate", "calories"])
+        self.assertNotIn("distance", keys)  # all hours missing
+        self.assertIn("gender: female", lines)
+        self.assertIn("had breakfast: yes", lines)
+        self.assertIn("had dinner: no", lines)
+        self.assertIn("sedentary minutes: 500", lines)
+        self.assertIn("readiness: 7", lines)
+        self.assertNotIn("resting heart rate", keys)  # missing values left out
+        for hidden in ["stress", "mood", "label"]:
+            self.assertNotIn(hidden, keys)
+
+    def test_text_without_statistics(self) -> None:
+        task = PMDataStressDetection(include_text=True, text_statistics=False)
+        text = task(_patient(_day()))[0]["text"]
+        self.assertNotIn("mean is", text)
+        self.assertTrue(text.startswith("age: 30"))
+
+    def test_text_follows_feature_groups(self) -> None:
+        task = PMDataStressDetection(
+            include_text=True, feature_groups=["training"], text_statistics=False
+        )
+        text = task(_patient(_day()))[0]["text"]
+        self.assertEqual(text, "training minutes: 45\nmax perceived exertion: 8")
+
+    def test_channel_statistics(self) -> None:
+        summary = channel_statistics([1.0, 2.0, 3.0, 4.0, math.nan])
+        self.assertEqual(summary["mean"], 2.5)
+        self.assertEqual(summary["min"], 1.0)
+        self.assertEqual(summary["max"], 4.0)
+        self.assertEqual(summary["interquartile range"], 1.5)
+        self.assertIn("kurtosis", summary)
+        self.assertNotIn("kurtosis", channel_statistics([2.0, 2.0]))
+        self.assertEqual(channel_statistics([math.nan]), {})
+
+    def test_describe_day_formats_numbers(self) -> None:
+        text = describe_day(
+            [[1.0]] * 24,
+            ["steps"],
+            {"weight": 70.25, "had_injury": 1.0},
+            ["weight", "had_injury"],
+            include_statistics=False,
+        )
+        self.assertEqual(text, "weight: 70.2\nhad injury: yes")
 
     def test_invalid_arguments(self) -> None:
         with self.assertRaises(ValueError):

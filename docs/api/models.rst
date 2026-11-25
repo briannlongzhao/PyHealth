@@ -60,6 +60,9 @@ routes each feature type automatically.
    * - :doc:`models/pyhealth.models.td_cnn_lstm`
      - You want real-time ICU mortality risk for each measurement-time state of irregular event streams
      - Temporal-difference training needs paired ``next_*`` successor states and a custom loop that calls ``model.update_target()`` after each optimizer step
+   * - :doc:`models/pyhealth.models.CLSP`
+     - You have wearable time series plus tabular features, few labels, and text descriptions of each sample
+     - CLIP-style contrastive pretraining against a frozen text encoder, then a linear probe or fine-tuning; needs ``transformers`` weights (BERT by default)
 
 How BaseModel Works
 --------------------
@@ -294,6 +297,7 @@ API Reference
     models/pyhealth.models.NeuralFineGray
     models/pyhealth.models.LogisticRegression
     models/pyhealth.models.MLP
+    models/pyhealth.models.CLSP
     models/pyhealth.models.CNN
     models/pyhealth.models.UNet
     models/pyhealth.models.RNN

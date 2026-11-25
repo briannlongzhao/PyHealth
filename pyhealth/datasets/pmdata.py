@@ -132,12 +132,12 @@ class PMDataDataset(BaseDataset):
 
     Examples:
         >>> from pyhealth.datasets import PMDataDataset
-        >>> dataset = PMDataDataset(root="/path/to/pmdata")
-        >>> dataset.stats()
-        >>> patient = dataset.get_patient("p01")
-        >>> wellness = patient.get_events(event_type="wellness")
-        >>> wellness[0].stress
-        >>> samples = dataset.set_task()  # PMDataStressDetection
+        >>> dataset = PMDataDataset(root="/path/to/pmdata")  # doctest: +SKIP
+        >>> dataset.stats()  # doctest: +SKIP
+        >>> patient = dataset.get_patient("p01")  # doctest: +SKIP
+        >>> wellness = patient.get_events(event_type="wellness")  # doctest: +SKIP
+        >>> wellness[0].stress  # doctest: +SKIP
+        >>> samples = dataset.set_task()  # doctest: +SKIP
     """
 
     def __init__(

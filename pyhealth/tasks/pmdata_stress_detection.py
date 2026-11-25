@@ -17,12 +17,17 @@ Description:
     distance), a vector of daily tabular features (demographics, activity,
     sleep, training, nutrition, injury and same-day wellness answers), and
     a binary label that is 1 when the self-reported 1-5 stress score is
-    above a threshold (3 in the paper).
+    above a threshold (3 in the paper). Optionally, each sample also gets a
+    text description of the day, generated as in the paper, for contrastive
+    language-sequence pretraining (:class:`~pyhealth.models.CLSP`).
 """
 
 import math
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence
+
+import numpy as np
+from scipy import stats
 
 from .base_task import BaseTask
 
@@ -76,6 +81,9 @@ FEATURE_GROUPS: Dict[str, List[str]] = {
 
 _MEALS = ["breakfast", "lunch", "dinner", "evening"]
 
+#: Features written as yes/no in the text description.
+_YES_NO_FEATURES = {f"had_{m}" for m in _MEALS} | {"alcohol_consumed", "had_injury"}
+
 
 def _to_float(value: Any) -> float:
     """Converts an event attribute to a float.
@@ -97,6 +105,108 @@ def _to_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return math.nan
+
+
+def _format_number(value: float) -> str:
+    """Formats a number for the text description.
+
+    Args:
+        value: The number.
+
+    Returns:
+        The number without decimals if it is whole, else with one decimal.
+    """
+    rounded = round(value, 1)
+    if float(rounded).is_integer():
+        return str(int(rounded))
+    return f"{rounded:.1f}"
+
+
+def channel_statistics(values: Sequence[float]) -> Dict[str, float]:
+    """Summarises one day of an hourly channel as in the paper's prompts.
+
+    The paper's code describes each channel with these nine statistics,
+    rounded to one decimal. Missing hours are ignored.
+
+    Args:
+        values: The channel's hourly values; NaN for missing hours.
+
+    Returns:
+        The statistics by name, in prompt order. Empty if no hour has a
+        value. Kurtosis and skewness are omitted if they are undefined (fewer
+        than two values or a constant channel).
+
+    Examples:
+        >>> channel_statistics([1.0, 2.0, 3.0, float("nan")])["mean"]
+        2.0
+    """
+    x = np.asarray([v for v in values if not math.isnan(v)], dtype=float)
+    if x.size == 0:
+        return {}
+    result = {
+        "mean": float(np.mean(x)),
+        "standard deviation": float(np.std(x)),
+        "min": float(np.min(x)),
+        "max": float(np.max(x)),
+        "median": float(np.median(x)),
+        "root mean squared": float(np.sqrt(np.mean(x**2))),
+    }
+    if x.size > 1 and np.ptp(x) > 0:
+        result["kurtosis"] = float(stats.kurtosis(x))
+        result["skewness"] = float(stats.skew(x))
+    result["interquartile range"] = float(stats.iqr(x))
+    return {k: round(v, 1) for k, v in result.items()}
+
+
+def describe_day(
+    wearable: Sequence[Sequence[float]],
+    channels: Sequence[str],
+    features: Dict[str, float],
+    feature_names: Sequence[str],
+    include_statistics: bool = True,
+) -> str:
+    """Writes the text description of one day, as in the paper's prompts.
+
+    One line per hourly channel with its statistics (see
+    :func:`channel_statistics`), then one ``name: value`` line per known
+    daily feature. Missing values are left out. The stress score, mood and
+    label are never included.
+
+    Args:
+        wearable: The day's ``24 x len(channels)`` hourly values.
+        channels: Names of the wearable channels.
+        features: Daily feature values by name.
+        feature_names: Features to describe, in order.
+        include_statistics: Whether to write the channel statistics lines.
+
+    Returns:
+        The description, one line per item.
+
+    Examples:
+        >>> text = describe_day([[10.0]] * 24, ["steps"], {"age": 30.0}, ["age"])
+        >>> text.splitlines()[0][:45]
+        'steps: mean is 10, standard deviation is 0, m'
+        >>> text.splitlines()[1]
+        'age: 30'
+    """
+    lines = []
+    if include_statistics:
+        for i, channel in enumerate(channels):
+            summary = channel_statistics([hour[i] for hour in wearable])
+            if summary:
+                parts = [f"{k} is {_format_number(v)}" for k, v in summary.items()]
+                lines.append(f"{channel.replace('_', ' ')}: {', '.join(parts)}")
+    for name in feature_names:
+        value = features.get(name, math.nan)
+        if value is None or math.isnan(value):
+            continue
+        if name == "gender_female":
+            lines.append(f"gender: {'female' if value else 'male'}")
+        elif name in _YES_NO_FEATURES:
+            lines.append(f"{name.replace('_', ' ')}: {'yes' if value else 'no'}")
+        else:
+            lines.append(f"{name.replace('_', ' ')}: {_format_number(value)}")
+    return "\n".join(lines)
 
 
 def _is_true(value: Any) -> bool:
@@ -132,6 +242,13 @@ class PMDataStressDetection(BaseTask):
     the training mean. The paper's code also filled missing values with a
     constant, but used quantile normalization.
 
+    - ``text`` (only with ``include_text=True``): a description of the day
+      written as in the paper's prompts (see :func:`describe_day`), with
+      statistics of each hourly channel and one line per known feature of
+      ``feature_groups``. The stress score, mood and label are left out.
+      It is kept as a string (``"raw"`` processor) for a model with a text
+      encoder, such as :class:`~pyhealth.models.CLSP`.
+
     Output: ``stress`` is 1 if the stress score is above
     ``stress_threshold`` and 0 otherwise.
 
@@ -163,6 +280,11 @@ class PMDataStressDetection(BaseTask):
         min_hours: Least number of hours with any wearable value for a day
             to be kept. Defaults to 24 (complete days only, as in the
             paper's code); 0 keeps every day.
+        include_text: Whether to add the ``text`` description. Defaults to
+            False.
+        text_statistics: Whether ``text`` includes the channel statistics
+            lines (as in the paper). Defaults to True; False keeps only the
+            daily feature lines.
 
     Raises:
         ValueError: If a feature group or channel is unknown, if no feature
@@ -171,12 +293,12 @@ class PMDataStressDetection(BaseTask):
     Examples:
         >>> from pyhealth.datasets import PMDataDataset
         >>> from pyhealth.tasks import PMDataStressDetection
-        >>> dataset = PMDataDataset(root="/path/to/pmdata")
+        >>> dataset = PMDataDataset(root="/path/to/pmdata")  # doctest: +SKIP
         >>> task = PMDataStressDetection(
         ...     feature_groups=["demographics", "activity", "sleep"],
         ... )
-        >>> samples = dataset.set_task(task)
-        >>> samples[0]["wearable"].shape
+        >>> samples = dataset.set_task(task)  # doctest: +SKIP
+        >>> samples[0]["wearable"].shape  # doctest: +SKIP
         torch.Size([24, 4])
     """
 
@@ -199,6 +321,8 @@ class PMDataStressDetection(BaseTask):
         feature_groups: Optional[Sequence[str]] = None,
         wearable_channels: Optional[Sequence[str]] = None,
         min_hours: int = 24,
+        include_text: bool = False,
+        text_statistics: bool = True,
     ) -> None:
         super().__init__()
         groups = (
@@ -229,6 +353,10 @@ class PMDataStressDetection(BaseTask):
         self.feature_groups = groups
         self.wearable_channels = channels
         self.min_hours = min_hours
+        self.include_text = include_text
+        self.text_statistics = text_statistics
+        if include_text:
+            self.input_schema = {**type(self).input_schema, "text": "raw"}
 
     @property
     def feature_names(self) -> List[str]:
@@ -248,8 +376,9 @@ class PMDataStressDetection(BaseTask):
 
         Returns:
             A list of samples, each with ``patient_id``, ``date``
-            (``YYYY-MM-DD``), ``stress_score``, ``wearable``, ``survey`` and
-            ``stress``. Empty if the participant has no usable day.
+            (``YYYY-MM-DD``), ``stress_score``, ``wearable``, ``survey``,
+            ``stress`` and, with ``include_text``, ``text``. Empty if the
+            participant has no usable day.
         """
         reports: Dict[date, Any] = {}
         for event in patient.get_events(event_type="wellness"):
@@ -283,16 +412,23 @@ class PMDataStressDetection(BaseTask):
             }
             features.update(self._wellness_features(reports[day]))
             survey = [features.get(name, math.nan) for name in self.feature_names]
-            samples.append(
-                {
-                    "patient_id": patient.patient_id,
-                    "date": day.isoformat(),
-                    "stress_score": int(score),
-                    "wearable": wearable,
-                    "survey": survey,
-                    "stress": int(score > self.stress_threshold),
-                }
-            )
+            sample = {
+                "patient_id": patient.patient_id,
+                "date": day.isoformat(),
+                "stress_score": int(score),
+                "wearable": wearable,
+                "survey": survey,
+                "stress": int(score > self.stress_threshold),
+            }
+            if self.include_text:
+                sample["text"] = describe_day(
+                    wearable,
+                    self.wearable_channels,
+                    features,
+                    self.feature_names,
+                    include_statistics=self.text_statistics,
+                )
+            samples.append(sample)
         return samples
 
     def _hourly_by_day(self, patient: Any) -> Dict[date, Dict[int, Dict[str, float]]]:

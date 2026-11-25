@@ -30,6 +30,7 @@ from .unet import (
 )
 from .transformer_deid import TransformerDeID
 from .biot import BIOT
+from .clsp import CLSP as CLSP
 from .cnn import CNN, CNNLayer
 from .concare import ConCare, ConCareLayer
 from .contrawr import ContraWR, ResBlock2D
